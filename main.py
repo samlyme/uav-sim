@@ -15,10 +15,6 @@ Quaternion = Annotated[npt.NDArray[Num], (4,)]
 RotationMatrix = Annotated[npt.NDArray[Num], (3, 3)]
 
 def e_to_q(e: EulerAngle) -> Quaternion:
-    """
-    Convert Euler angles to quaternion.
-    This is a placeholder function; actual implementation may vary.
-    """
     phi, theta, psi = e[0], e[1], e[2]
     cy = np.cos(psi * 0.5)
     sy = np.sin(psi * 0.5)
@@ -37,9 +33,6 @@ def e_to_q(e: EulerAngle) -> Quaternion:
     return q / np.linalg.norm(q)
 
 def qm(a: Quaternion, b: Quaternion) -> Quaternion:
-    """
-    Quaternion multiplication.
-    """
     w1, x1, y1, z1 = a
     w2, x2, y2, z2 = b
     return np.array([
@@ -50,9 +43,6 @@ def qm(a: Quaternion, b: Quaternion) -> Quaternion:
     ], dtype=Num)
 
 def q_to_R(q: Quaternion) -> RotationMatrix:
-    """
-    Convert quaternion to rotation matrix.
-    """
     w, x, y, z = q
     return np.array([
         [1 - 2 * (y**2 + z**2), 2 * (x * y - w * z), 2 * (x * z + w * y)],
@@ -66,16 +56,16 @@ ANGULAR_SPEED = np.pi / 4
 
 class KinematicObject:
     def __init__(self, P_i_0: Vector3, q_i_0: Quaternion):
-        self.P_i = P_i_0  # Position in inertial frame (pn, pe, -h)
+        self.P_i = P_i_0  
         self.q_i = q_i_0
 
     def update(self, v_b: Vector3, omega_b: EulerAngle, dt: Num):
-        R = q_to_R(self.q_i)  # Rotation matrix from inertial to body frame
+        R = q_to_R(self.q_i)
         v_i = R @ v_b  
         self.P_i += v_i * dt
 
         dq = e_to_q(omega_b * dt)  
-        self.q_i = qm(self.q_i, dq)  # Update quaternion
+        self.q_i = qm(self.q_i, dq)
 
         return self.P_i, self.q_i
 
@@ -197,23 +187,6 @@ async def key_reader():
 
 
 async def main():
-    # print("yaw test")
-    # for i in range(8):
-    #     e = np.array([0, 0, i * np.pi / 4], dtype=Num)  
-        
-    #     print(R_b_v(e) @ np.array([1, 0, 0], dtype=Num))  
-
-    # print("pitch test")
-    # for i in range(8):
-    #     e = np.array([0, i * np.pi / 4, 0], dtype=Num)  
-        
-    #     print(R_b_v(e) @ np.array([1, 0, 0], dtype=Num))  
-
-    # print("roll test")
-    # for i in range(8):
-    #     e = np.array([i * np.pi / 4, 0, 0], dtype=Num)  
-        
-    #     print(R_b_v(e) @ np.array([1, 0, 0], dtype=Num))  
     print("Starting key reader...")
     asyncio.create_task(key_reader())
 

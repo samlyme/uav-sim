@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Quadcopter + Chase View</title>
+  <title>Quadcopter + Chase View (NED)</title>
   <style>
     body { margin:0; overflow:hidden }
     #info {
@@ -15,65 +15,82 @@
 </head>
 <body>
   <div id="info">connecting…</div>
-  <!-- load Three.js v0.125.0 -->
+
+  <!-- Three.js v0.125.0 -->
   <script src="https://unpkg.com/three@0.125.0/build/three.min.js"></script>
   <script>
-    // 1) Scene + two cameras
+    // 1) SCENE + TWO CAMERAS
     const scene = new THREE.Scene();
 
-    // Main NED camera
+    // MAIN “MAP” CAMERA
     const mainCam = new THREE.PerspectiveCamera(60,1,0.1,1000);
-    mainCam.up.set(1,0,0);
-    mainCam.position.set(20, -20, -10);
+    // NED: world-X = North → screen-up
+    mainCam.up.set(0,0,-1);
+    // place camera in NW quadrant, 10 units above ground (Z negative = up)
+    mainCam.position.set(-20, -10, -10);
     mainCam.lookAt(0,0,0);
 
-    // Chase camera (will track drone)
+    // CHASE CAMERA (inset)
     const chaseCam = new THREE.PerspectiveCamera(50,1,0.1,1000);
+    chaseCam.up.set(0,0,-1);
 
-    // Renderer
+    // RENDERER
     const renderer = new THREE.WebGLRenderer({antialias:true});
     renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
 
-    // 2) Helpers
-    const grid = new THREE.GridHelper(20,20,0x444444,0x888888);
+    // 2) HELPERS: GRID in the X–Y plane ⟂ Z (Down), + AXES
+    const grid = new THREE.GridHelper(20, 20, 0x444444, 0x888888);
+    // default is X–Z plane; rotate so it lies in X–Y
     grid.rotation.x = Math.PI/2;
     scene.add(grid);
+
+    // Axes: red = +X (North), green = +Y (East), blue = +Z (Down)
     scene.add(new THREE.AxesHelper(5));
 
-    // 3) Build drone (colorful)
+    // 3) BUILD A COLORFUL QUADCOPTER
     const drone = new THREE.Group();
-    // body
+    // central fuselage (magenta)
     drone.add(new THREE.Mesh(
       new THREE.BoxGeometry(0.6,0.1,0.4),
-      new THREE.MeshStandardMaterial({color:0xff33aa, metalness:0.3, roughness:0.6})
+      new THREE.MeshStandardMaterial({
+        color:0xff33aa, metalness:0.3, roughness:0.6
+      })
     ));
-    // arms
-    const armG = new THREE.BoxGeometry(1.5,0.05,0.05);
-    drone.add(new THREE.Mesh(armG, new THREE.MeshStandardMaterial({color:0x33ff55})));
-    const armY = new THREE.Mesh(armG, new THREE.MeshStandardMaterial({color:0x3399ff}));
+    // X‐arm (lime)
+    const armGeo = new THREE.BoxGeometry(1.5,0.05,0.05);
+    drone.add(new THREE.Mesh(
+      armGeo,
+      new THREE.MeshStandardMaterial({color:0x33ff55})
+    ));
+    // Y‐arm (cyan)
+    const armY = new THREE.Mesh(
+      armGeo,
+      new THREE.MeshStandardMaterial({color:0x33ccff})
+    );
     armY.rotation.z = Math.PI/2;
     drone.add(armY);
-    // props
-    const propG = new THREE.CylinderGeometry(0.2,0.2,0.02,16);
-    const propM = new THREE.MeshStandardMaterial({
-      color:0xffff33, transparent:true, opacity:0.8, side:THREE.DoubleSide
+    // semi-transparent yellow propellers
+    const propGeo = new THREE.CylinderGeometry(0.2,0.2,0.02,16);
+    const propMat = new THREE.MeshStandardMaterial({
+      color:0xffff33, transparent:true, opacity:0.7, side:THREE.DoubleSide
     });
-    [[.75,0,0],[-.75,0,0],[0,.75,0],[0,-.75,0]].forEach(p=>{
-      const m=new THREE.Mesh(propG,propM);
-      m.rotation.x = Math.PI/2;
-      m.position.set(...p);
-      drone.add(m);
-    });
+    [[.75,0,0],[-.75,0,0],[0,.75,0],[0,-.75,0]]
+      .forEach(pos => {
+        const m = new THREE.Mesh(propGeo, propMat);
+        m.rotation.x = Math.PI/2; // flat in X–Y
+        m.position.set(...pos);
+        drone.add(m);
+      });
     scene.add(drone);
 
-    // 4) Lights
-    scene.add(new THREE.HemisphereLight(0xddddff,0x444466,1.0));
-    const sun = new THREE.DirectionalLight(0xffffff,0.6);
+    // 4) LIGHTING so colors read well
+    scene.add(new THREE.HemisphereLight(0xeeeeff, 0x444466, 1.0));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.6);
     sun.position.set(5,5,5);
     scene.add(sun);
 
-    // 5) Velocity arrow
+    // 5) VELOCITY ARROW (orange)
     const arrow = new THREE.ArrowHelper(
       new THREE.Vector3(1,0,0),
       new THREE.Vector3(0,0,0),
@@ -81,34 +98,35 @@
     );
     scene.add(arrow);
 
-    // 6) WebSocket state updates
+    // 6) WEBSOCKET → UPDATE POSE & ARROW
     const info = document.getElementById('info');
     const ws   = new WebSocket('ws://localhost:8765');
-    ws.onopen    = () => info.textContent = 'connected';
-    ws.onclose   = () => info.textContent = 'disconnected';
-    ws.onerror   = e => { info.textContent = 'error'; console.error(e); };
-    ws.onmessage = ev => {
+    ws.onopen    = ()=> info.textContent = 'connected';
+    ws.onclose   = ()=> info.textContent = 'disconnected';
+    ws.onerror   = e=> { info.textContent='error'; console.error(e); };
+    ws.onmessage = ev=>{
       const m = JSON.parse(ev.data);
-      const [xn,ye,zd] = m.p_i;
-      const [w,qx,qy,qz] = m.q;
+      const [xn, ye, zd] = m.p_i;        // North, East, Down
+      const [w, qx, qy, qz] = m.q;       // w,x,y,z
 
-      // pose drone
-      drone.position.set(xn,ye,zd);
-      drone.quaternion.set(qx,qy,qz,w);
+      // 1) pose the whole drone
+      drone.position.set(xn, ye, zd);
+      drone.quaternion.set(qx, qy, qz, w);
 
-      // velocity arrow
+      // 2) velocity arrow in world frame
       arrow.position.copy(drone.position);
-      const vb = new THREE.Vector3(...m.v_b).applyQuaternion(drone.quaternion);
+      const vb = new THREE.Vector3(...m.v_b)
+                    .applyQuaternion(drone.quaternion);
       const sp = vb.length()||1e-6;
       arrow.setDirection(vb.clone().normalize());
-      arrow.setLength(sp,0.2,0.1);
+      arrow.setLength(sp, 0.2, 0.1);
 
-      // update HUD
-      info.textContent =
-        `t=${m.time.toFixed(2)}  N=${xn.toFixed(2)},E=${ye.toFixed(2)},D=${zd.toFixed(2)}`;
+      // 3) HUD
+      info.textContent = 
+        `t=${m.time.toFixed(2)}  N=${xn.toFixed(2)}, E=${ye.toFixed(2)}, D=${zd.toFixed(2)}`;
     };
 
-    // 7) Resize and render loop with two viewports
+    // 7) RESIZE + ANIMATE (main + chase inset)
     function onResize(){
       renderer.setSize(window.innerWidth, window.innerHeight);
       mainCam.aspect = window.innerWidth/window.innerHeight;
@@ -120,22 +138,24 @@
     function animate(){
       requestAnimationFrame(animate);
 
-      // Main full-screen view
+      // — Full-screen main view —
       renderer.setViewport(0,0,window.innerWidth,window.innerHeight);
       renderer.setScissorTest(false);
       renderer.clear();
       renderer.render(scene, mainCam);
 
-      // Chase inset (upper-right)
-      const insetW = 200, insetH = 150;
+      // — Chase-cam inset —
+      const insetW = 240, insetH = 180;
       const x = window.innerWidth - insetW - 10;
       const y = window.innerHeight - insetH - 10;
 
-      // position chaseCam behind & above drone in NED
+      // place chaseCam behind (-X) and above (-Z) the drone
       const offset = new THREE.Vector3(-3, 0, -1);
+      const bodyDown = new THREE.Vector3(0, 0, -1).applyQuaternion(drone.quaternion);
+      chaseCam.up.copy(bodyDown);
+      
       chaseCam.position.copy(drone.localToWorld(offset.clone()));
       chaseCam.lookAt(drone.position);
-
       chaseCam.aspect = insetW/insetH;
       chaseCam.updateProjectionMatrix();
 
@@ -145,7 +165,6 @@
       renderer.render(scene, chaseCam);
       renderer.setScissorTest(false);
     }
-
     animate();
   </script>
 </body>
